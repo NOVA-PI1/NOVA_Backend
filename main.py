@@ -4,8 +4,8 @@ import socketio
 from bcl.loader import KnowledgeBaseService
 from config import get_settings
 from llm import create_llm_provider
-from orchestrator.graph import create_orchestrator
-from schemas import CanvasEditRequest, SessionRequest, SessionResponse
+from orchestrator.crew import NovaCrewOrchestrator
+from schemas import CanvasEditRequest, SessionRequest, SessionResponse, BusEvent
 from services import InMemoryMessageBus, SQLiteSessionStore
 
 
@@ -13,12 +13,22 @@ settings = get_settings()
 store = SQLiteSessionStore(settings.database_url)
 bus = InMemoryMessageBus()
 knowledge_base = KnowledgeBaseService(settings)
-llm = create_llm_provider(settings)
-orchestrator = create_orchestrator(store, bus, knowledge_base, llm)
+
+# Determinamos el identificador del LLM para CrewAI (LiteLLM style)
+llm_id = f"{settings.llm_provider}/{settings.llm_model}" if settings.llm_provider != "fake" else None
+
+# Instanciamos el nuevo orquestador de CrewAI
+orchestrator = NovaCrewOrchestrator(llm_id, knowledge_base, bus, store)
 
 app = FastAPI(title=settings.app_name)
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=settings.cors_allowed_origins)
 socket_app = socketio.ASGIApp(sio, app)
+
+# Puente: Todo lo que llegue al bus se emite por Socket.IO al frontend
+async def bridge_bus_to_sio(event: BusEvent):
+    await sio.emit("agent_event", event.model_dump(mode="json"))
+
+bus.subscribe(bridge_bus_to_sio)
 
 
 @app.get("/health")
@@ -55,3 +65,8 @@ async def on_editar(sid, data):
         },
         to=sid,
     )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:socket_app", host="0.0.0.0", port=8000, reload=True)

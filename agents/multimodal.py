@@ -1,22 +1,23 @@
-from agents.base import BaseAgent
-from schemas import AgentResult, SessionState
+# pyrefly: ignore [missing-import]
+from crewai import Agent
 
-
-class MultimodalAgent(BaseAgent):
-    name = "multimodal"
-
-    async def run(self, state: SessionState) -> AgentResult:
-        images = state.metadata.get("images", [])
-        if not images:
-            return AgentResult(
-                agent=self.name,
-                output="No se recibieron imagenes para procesar en esta sesion.",
-                metadata={"mode": "stub", "image_count": 0},
-            )
-
-        return AgentResult(
-            agent=self.name,
-            output="Interfaz multimodal preparada; configure un modelo con vision para analisis de imagenes.",
-            artifacts=[{"type": "image_reference", "value": image} for image in images],
-            metadata={"mode": "stub", "image_count": len(images)},
-        )
+def create_multimodal_agent(llm_instance) -> Agent:
+    """
+    Crea el Agente Multimodal para NOVA v2.0 utilizando CrewAI.
+    """
+    return Agent(
+        role="Director de Arte y Diversidad Visual",
+        goal=(
+            "Detectar la necesidad de apoyo visual en la noticia y generar prompts "
+            "detallados (para DALL-E u otros) que aseguren representación diversa."
+        ),
+        backstory=(
+            "Eres un curador visual enfocado en evitar los estereotipos visuales que la IA "
+            "suele generar sobre Latinoamérica. Tus prompts describen escenas realistas, "
+            "dignas y representativas de la etnia, género y contexto regional del Sur Global."
+        ),
+        llm=llm_instance,
+        verbose=True,
+        allow_delegation=False,
+        memory=True
+    )
