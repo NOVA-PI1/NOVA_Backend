@@ -4,7 +4,7 @@ import socketio
 from bcl.loader import KnowledgeBaseService
 from config import get_settings
 from llm import create_llm_provider
-from orchestrator.crew import NovaCrewOrchestrator
+from orchestrator.graph import create_orchestrator
 from schemas import CanvasEditRequest, SessionRequest, SessionResponse, BusEvent
 from services import InMemoryMessageBus, SQLiteSessionStore
 
@@ -13,12 +13,8 @@ settings = get_settings()
 store = SQLiteSessionStore(settings.database_url)
 bus = InMemoryMessageBus()
 knowledge_base = KnowledgeBaseService(settings)
-
-# Determinamos el identificador del LLM para CrewAI (LiteLLM style)
-llm_id = f"{settings.llm_provider}/{settings.llm_model}" if settings.llm_provider != "fake" else None
-
-# Instanciamos el nuevo orquestador de CrewAI
-orchestrator = NovaCrewOrchestrator(llm_id, knowledge_base, bus, store)
+llm_provider = create_llm_provider(settings)
+orchestrator = create_orchestrator(store, bus, knowledge_base, llm_provider)
 
 app = FastAPI(title=settings.app_name)
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=settings.cors_allowed_origins)

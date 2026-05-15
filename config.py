@@ -5,7 +5,17 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-LLMProviderName = Literal["openai-compatible", "openai", "anthropic", "gemini", "fake"]
+LLMProviderName = Literal[
+    "openai-compatible",
+    "openai",
+    "anthropic",
+    "gemini",
+    "groq",
+    "openrouter",
+    "together",
+    "ollama",
+    "fake",
+]
 
 
 class Settings(BaseSettings):
@@ -24,6 +34,9 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     gemini_api_key: str | None = None
+    groq_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    together_api_key: str | None = None
 
     database_url: str = "sqlite:///./nova.db"
     chroma_persist_path: str = "./chroma_db"

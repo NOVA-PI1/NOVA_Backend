@@ -33,13 +33,20 @@ class FakeLLMProvider(LLMProvider):
 class OpenAICompatibleProvider(LLMProvider):
     name = "openai-compatible"
 
-    def __init__(self, settings: Settings, *, provider_name: str | None = None) -> None:
-        api_key = settings.openai_api_key or "not-required"
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        provider_name: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ) -> None:
+        resolved_api_key = api_key or settings.openai_api_key or "not-required"
         self.settings = settings
         self.name = provider_name or self.name
         self.client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=settings.llm_base_url,
+            api_key=resolved_api_key,
+            base_url=base_url or settings.llm_base_url,
             timeout=settings.llm_timeout_seconds,
         )
 
@@ -60,6 +67,52 @@ class OpenAICompatibleProvider(LLMProvider):
 class OpenAIProvider(OpenAICompatibleProvider):
     def __init__(self, settings: Settings) -> None:
         super().__init__(settings, provider_name="openai")
+
+
+class GroqProvider(OpenAICompatibleProvider):
+    def __init__(self, settings: Settings) -> None:
+        if not settings.groq_api_key:
+            raise ValueError("GROQ_API_KEY is required for the groq provider")
+        super().__init__(
+            settings,
+            provider_name="groq",
+            api_key=settings.groq_api_key,
+            base_url="https://api.groq.com/openai/v1",
+        )
+
+
+class OpenRouterProvider(OpenAICompatibleProvider):
+    def __init__(self, settings: Settings) -> None:
+        if not settings.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY is required for the openrouter provider")
+        super().__init__(
+            settings,
+            provider_name="openrouter",
+            api_key=settings.openrouter_api_key,
+            base_url="https://openrouter.ai/api/v1",
+        )
+
+
+class TogetherProvider(OpenAICompatibleProvider):
+    def __init__(self, settings: Settings) -> None:
+        if not settings.together_api_key:
+            raise ValueError("TOGETHER_API_KEY is required for the together provider")
+        super().__init__(
+            settings,
+            provider_name="together",
+            api_key=settings.together_api_key,
+            base_url="https://api.together.xyz/v1",
+        )
+
+
+class OllamaProvider(OpenAICompatibleProvider):
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(
+            settings,
+            provider_name="ollama",
+            api_key="ollama",
+            base_url=settings.llm_base_url or "http://127.0.0.1:11434/v1",
+        )
 
 
 class AnthropicProvider(LLMProvider):

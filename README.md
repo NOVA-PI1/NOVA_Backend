@@ -19,7 +19,7 @@ El sistema implementa una arquitectura de "Caja Blanca" (White Box) que permite 
 *   **Comunicación en Tiempo Real:** Socket.IO (ASGI)
 *   **Base de Datos Vectorial:** ChromaDB
 *   **Base de Datos Relacional:** SQLite (SQLAlchemy)
-*   **Proveedores de LLM compatibles:** OpenAI, Anthropic, Gemini y proveedores compatibles con OpenAI.
+*   **Proveedores de LLM compatibles:** OpenAI, Anthropic, Gemini, Groq, OpenRouter, Together, Ollama local y proveedores compatibles con OpenAI.
 
 ## Estructura del Proyecto
 ```text
@@ -61,12 +61,58 @@ APP_NAME="Nova Backend"
 ENVIRONMENT="development"
 CORS_ALLOWED_ORIGINS="*"
 
-LLM_PROVIDER="openai"
-LLM_MODEL="gpt-4-turbo"
-OPENAI_API_KEY="tu_clave_aqui"
+LLM_PROVIDER="fake"
+LLM_MODEL="nova-fake"
+LLM_MAX_TOKENS=900
 
 DATABASE_URL="sqlite:///./nova.db"
 CHROMA_PERSIST_PATH="./chroma_db"
+```
+
+### Proveedores públicos para pruebas reales
+NOVA puede ejecutar los agentes con modelos externos usando variables de entorno. El flujo de `/session` devuelve salidas separadas para los roles `editorial`, `etico`, `dialectico` y `multimodal`, lo que permite probar si cada modelo cumple su función.
+
+#### Groq
+```env
+LLM_PROVIDER="groq"
+LLM_MODEL="llama-3.1-8b-instant"
+GROQ_API_KEY="tu_clave_groq"
+```
+
+#### OpenRouter
+```env
+LLM_PROVIDER="openrouter"
+LLM_MODEL="meta-llama/llama-3.1-8b-instruct"
+OPENROUTER_API_KEY="tu_clave_openrouter"
+```
+
+#### Together
+```env
+LLM_PROVIDER="together"
+LLM_MODEL="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
+TOGETHER_API_KEY="tu_clave_together"
+```
+
+#### Ollama local
+```env
+LLM_PROVIDER="ollama"
+LLM_MODEL="llama3.1:8b"
+LLM_BASE_URL="http://127.0.0.1:11434/v1"
+```
+
+También puede usarse cualquier API compatible con OpenAI:
+```env
+LLM_PROVIDER="openai-compatible"
+LLM_MODEL="modelo-del-proveedor"
+LLM_BASE_URL="https://proveedor.example/v1"
+OPENAI_API_KEY="clave-del-proveedor"
+```
+
+Ejemplo rápido para probar un artículo:
+```bash
+curl -X POST http://127.0.0.1:8000/session \
+  -H "Content-Type: application/json" \
+  -d '{"texto":"Escribe un artículo sobre los retos de la transición energética justa en Colombia"}'
 ```
 
 ## Ejecución

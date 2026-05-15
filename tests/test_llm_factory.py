@@ -12,6 +12,26 @@ class LLMFactoryTests(unittest.TestCase):
 
         self.assertEqual(provider.name, "fake")
 
+    def test_public_openai_compatible_providers_are_selectable(self):
+        cases = [
+            ("groq", {"groq_api_key": "test-key"}),
+            ("openrouter", {"openrouter_api_key": "test-key"}),
+            ("together", {"together_api_key": "test-key"}),
+            ("ollama", {}),
+        ]
+
+        for provider_name, credentials in cases:
+            with self.subTest(provider=provider_name):
+                settings = Settings(
+                    llm_provider=provider_name,
+                    llm_model="test-model",
+                    **credentials,
+                )
+
+                provider = create_llm_provider(settings)
+
+                self.assertEqual(provider.name, provider_name)
+
 
 if __name__ == "__main__":
     unittest.main()

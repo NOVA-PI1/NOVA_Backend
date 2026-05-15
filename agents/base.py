@@ -1,7 +1,12 @@
 from abc import ABC, abstractmethod
+from typing import Protocol
 
-from llm import LLMProvider
 from schemas import AgentName, AgentResult, LLMMessage, LLMRequest, SessionState
+
+
+class LLMProvider(Protocol):
+    async def generate(self, request: LLMRequest):
+        ...
 
 
 class BaseAgent(ABC):

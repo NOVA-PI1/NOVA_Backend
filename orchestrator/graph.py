@@ -111,9 +111,9 @@ def create_orchestrator(store: SQLiteSessionStore, bus: InMemoryMessageBus, know
         bus=bus,
         knowledge_base=knowledge_base,
         agents=[
+            EditorialAgent(llm),
             EthicalAgent(llm),
             DialecticalAgent(llm),
-            EditorialAgent(llm),
             MultimodalAgent(llm),
         ],
     )
