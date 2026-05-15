@@ -78,6 +78,9 @@ class NovaCrewOrchestrator:
         
         self.store.save_session(state)
         self.store.save_message(state.session_id, "user", request.texto)
+
+        if self.llm is None:
+            return self._run_fake_session(state, request)
         
         # Ejecución de la Crew
         print(f"--- Iniciando CrewAI para: {request.texto} ---")
@@ -89,13 +92,50 @@ class NovaCrewOrchestrator:
         
         # Guardamos un resultado genérico de la ejecución en la traza
         final_result = AgentResult(
-            agent="crew_final",
+            agent="editorial",
             output=str(result),
             tokens_used=0 # CrewAI no lo entrega directo en kickoff fácilmente sin extraer de la salida
         )
         state.agent_results.append(final_result)
+        self.store.save_agent_result(state.session_id, final_result)
         self.store.save_session(state)
         
+        return self._response_from_state(state)
+
+    def _run_fake_session(self, state: SessionState, request: SessionRequest) -> SessionResponse:
+        draft = (
+            f"## Borrador NOVA\n\n"
+            f"**Tema:** {request.texto}\n\n"
+            "Esta es una respuesta local de verificación generada con LLM_PROVIDER=fake. "
+            "Confirma que FastAPI, la persistencia SQLite y la integración con el frontend "
+            "están respondiendo sin requerir credenciales de un proveedor LLM."
+        )
+        results = [
+            AgentResult(agent="editorial", output=draft),
+            AgentResult(
+                agent="etico",
+                output="Revisión ética simulada: no se detectan riesgos en esta prueba técnica.",
+            ),
+            AgentResult(
+                agent="multimodal",
+                output="Sugerencia simulada: usar una visualización simple del flujo frontend-backend.",
+            ),
+            AgentResult(
+                agent="dialectico",
+                output="Pregunta crítica simulada: ¿la interfaz muestra claramente errores del backend?",
+            ),
+        ]
+
+        state.agent_results.extend(results)
+        state.status = "completed"
+        state.updated_at = utc_now()
+        state.metadata = {**state.metadata, "mode": "fake"}
+
+        for result in results:
+            self.store.save_agent_result(state.session_id, result)
+        self.store.save_message(state.session_id, "assistant", draft)
+        self.store.save_session(state)
+
         return self._response_from_state(state)
 
     def get_session(self, session_id: str) -> SessionResponse | None:
@@ -121,10 +161,10 @@ class NovaCrewOrchestrator:
         return SessionResponse(
             session_id=state.session_id,
             status=state.status,
-            editorial=by_agent.get("crew_final"), # Mapeo temporal
-            etico=None,
-            dialectico=None,
-            multimodal=None,
+            editorial=by_agent.get("editorial"),
+            etico=by_agent.get("etico"),
+            dialectico=by_agent.get("dialectico"),
+            multimodal=by_agent.get("multimodal"),
             knowledge_hits=[],
             trace=state.agent_results,
             metadata=state.metadata,

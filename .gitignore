@@ -6,5 +6,7 @@ __pycache__/
 *.db
 *.sqlite
 chroma_db/
+.local_data/
+.local_home/
 .pytest_cache/
 .coverage
