@@ -203,7 +203,7 @@ class PostgresSessionStore:
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    CREATE TABLE IF NOT EXISTS sessions (
+                    CREATE TABLE IF NOT EXISTS nova_sessions (
                         session_id TEXT PRIMARY KEY,
                         input_text TEXT NOT NULL,
                         perfil JSONB NOT NULL,
@@ -214,7 +214,7 @@ class PostgresSessionStore:
                         updated_at TIMESTAMPTZ NOT NULL
                     );
 
-                    CREATE TABLE IF NOT EXISTS messages (
+                    CREATE TABLE IF NOT EXISTS nova_messages (
                         id BIGSERIAL PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         role TEXT NOT NULL,
@@ -222,7 +222,7 @@ class PostgresSessionStore:
                         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     );
 
-                    CREATE TABLE IF NOT EXISTS agent_results (
+                    CREATE TABLE IF NOT EXISTS nova_agent_results (
                         id BIGSERIAL PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         agent TEXT NOT NULL,
@@ -236,7 +236,7 @@ class PostgresSessionStore:
                         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     );
 
-                    CREATE TABLE IF NOT EXISTS bus_events (
+                    CREATE TABLE IF NOT EXISTS nova_bus_events (
                         id TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         type TEXT NOT NULL,
@@ -255,7 +255,7 @@ class PostgresSessionStore:
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO sessions (
+                    INSERT INTO nova_sessions (
                         session_id, input_text, perfil, metadata, knowledge_hits, status, created_at, updated_at
                     ) VALUES (
                         %(session_id)s, %(input_text)s, %(perfil)s, %(metadata)s, %(knowledge_hits)s,
@@ -277,7 +277,7 @@ class PostgresSessionStore:
         with self._lock:
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO messages (session_id, role, content) VALUES (%s, %s, %s)",
+                    "INSERT INTO nova_messages (session_id, role, content) VALUES (%s, %s, %s)",
                     (session_id, role, content),
                 )
             self.connection.commit()
@@ -289,7 +289,7 @@ class PostgresSessionStore:
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO agent_results (
+                    INSERT INTO nova_agent_results (
                         session_id, agent, output, warnings, questions, artifacts, tokens_used, metadata, error
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
@@ -315,7 +315,7 @@ class PostgresSessionStore:
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO bus_events (id, session_id, type, payload, created_at)
+                    INSERT INTO nova_bus_events (id, session_id, type, payload, created_at)
                     VALUES (%(id)s, %(session_id)s, %(type)s, %(payload)s, %(created_at)s)
                     ON CONFLICT(id) DO UPDATE SET
                         session_id=EXCLUDED.session_id,
@@ -330,12 +330,12 @@ class PostgresSessionStore:
     def get_session(self, session_id: str) -> SessionState | None:
         with self._lock:
             with self.connection.cursor(cursor_factory=self.cursor_factory) as cursor:
-                cursor.execute("SELECT * FROM sessions WHERE session_id = %s", (session_id,))
+                cursor.execute("SELECT * FROM nova_sessions WHERE session_id = %s", (session_id,))
                 session = cursor.fetchone()
                 if session is None:
                     return None
                 cursor.execute(
-                    "SELECT * FROM agent_results WHERE session_id = %s ORDER BY id ASC",
+                    "SELECT * FROM nova_agent_results WHERE session_id = %s ORDER BY id ASC",
                     (session_id,),
                 )
                 results = cursor.fetchall()
@@ -356,7 +356,7 @@ class PostgresSessionStore:
         with self._lock:
             with self.connection.cursor(cursor_factory=self.cursor_factory) as cursor:
                 cursor.execute(
-                    "SELECT * FROM bus_events WHERE session_id = %s ORDER BY created_at ASC",
+                    "SELECT * FROM nova_bus_events WHERE session_id = %s ORDER BY created_at ASC",
                     (session_id,),
                 )
                 rows = cursor.fetchall()
@@ -374,7 +374,7 @@ class PostgresSessionStore:
     def list_sessions(self, user_id: str | None = None, limit: int = 50) -> list[SessionSummary]:
         limit = max(1, min(limit, 200))
         params: list[object] = []
-        query = "SELECT * FROM sessions"
+        query = "SELECT * FROM nova_sessions"
         if user_id:
             query += " WHERE perfil->>'user_id' = %s"
             params.append(user_id)
