@@ -11,17 +11,18 @@ from schemas import (
     CanvasEditRequest,
     SessionRequest,
     SessionResponse,
+    SessionSummary,
     SessionState,
     utc_now,
 )
-from services import InMemoryMessageBus, SQLiteSessionStore
+from services import InMemoryMessageBus
 
 
 class NovaOrchestrator:
     def __init__(
         self,
         *,
-        store: SQLiteSessionStore,
+        store,
         bus: InMemoryMessageBus,
         knowledge_base: KnowledgeBaseService,
         agents: Iterable[object],
@@ -71,6 +72,9 @@ class NovaOrchestrator:
             return None
         return self._response_from_state(state)
 
+    def list_sessions(self, user_id: str | None = None, limit: int = 50) -> list[SessionSummary]:
+        return self.store.list_sessions(user_id=user_id, limit=limit)
+
     async def handle_canvas_edit(self, request: CanvasEditRequest) -> BusEvent:
         session_id = request.session_id or "canvas"
         payload = {
@@ -105,7 +109,7 @@ class NovaOrchestrator:
         )
 
 
-def create_orchestrator(store: SQLiteSessionStore, bus: InMemoryMessageBus, knowledge_base, llm) -> NovaOrchestrator:
+def create_orchestrator(store, bus: InMemoryMessageBus, knowledge_base, llm) -> NovaOrchestrator:
     return NovaOrchestrator(
         store=store,
         bus=bus,

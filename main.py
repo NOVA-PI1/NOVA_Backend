@@ -1,16 +1,16 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 import socketio
 
 from bcl.loader import KnowledgeBaseService
 from config import get_settings
 from llm import create_llm_provider
 from orchestrator.graph import create_orchestrator
-from schemas import CanvasEditRequest, SessionRequest, SessionResponse, BusEvent
-from services import InMemoryMessageBus, SQLiteSessionStore
+from schemas import CanvasEditRequest, SessionRequest, SessionResponse, BusEvent, SessionSummary
+from services import InMemoryMessageBus, create_session_store
 
 
 settings = get_settings()
-store = SQLiteSessionStore(settings.database_url)
+store = create_session_store(settings.database_url)
 bus = InMemoryMessageBus()
 knowledge_base = KnowledgeBaseService(settings)
 llm_provider = create_llm_provider(settings)
@@ -40,6 +40,14 @@ async def health() -> dict:
 @app.post("/session", response_model=SessionResponse)
 async def nueva_sesion(data: SessionRequest) -> SessionResponse:
     return await orchestrator.run_session(data)
+
+
+@app.get("/sessions", response_model=list[SessionSummary])
+async def listar_sesiones(
+    user_id: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[SessionSummary]:
+    return orchestrator.list_sessions(user_id=user_id, limit=limit)
 
 
 @app.get("/session/{session_id}", response_model=SessionResponse)

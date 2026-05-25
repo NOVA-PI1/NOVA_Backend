@@ -1,8 +1,11 @@
 import unittest
+import os
 from unittest.mock import AsyncMock
 
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 import main
-from schemas import AgentResult, BusEvent, SessionResponse
+from schemas import AgentResult, BusEvent, SessionResponse, SessionSummary, utc_now
 
 
 class FakeOrchestrator:
@@ -20,6 +23,18 @@ class FakeOrchestrator:
         if session_id == "missing":
             return None
         return SessionResponse(session_id=session_id, status="completed")
+
+    def list_sessions(self, user_id=None, limit=50):
+        return [
+            SessionSummary(
+                session_id="session-1",
+                title="Texto final",
+                status="completed",
+                created_at=utc_now(),
+                updated_at=utc_now(),
+                user_id=user_id,
+            )
+        ]
 
     async def handle_canvas_edit(self, request):
         return BusEvent(session_id=request.session_id or "canvas", type="canvas.edited")
@@ -47,6 +62,7 @@ class ApiTests(unittest.TestCase):
         paths = {route.path for route in main.app.routes}
 
         self.assertIn("/session", paths)
+        self.assertIn("/sessions", paths)
         self.assertIn("/session/{session_id}", paths)
 
 
@@ -68,6 +84,12 @@ class ApiHandlerTests(unittest.IsolatedAsyncioTestCase):
             await main.obtener_sesion("missing")
 
         self.assertEqual(error.exception.status_code, 404)
+
+    async def test_list_sessions_handler(self):
+        response = await main.listar_sesiones(user_id="user-1", limit=10)
+
+        self.assertEqual(response[0].session_id, "session-1")
+        self.assertEqual(response[0].user_id, "user-1")
 
 
 class SocketTests(unittest.IsolatedAsyncioTestCase):

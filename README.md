@@ -9,7 +9,7 @@ El sistema implementa una arquitectura de "Caja Blanca" (White Box) que permite 
 *   **Orquestación Multi-Agente:** Flujo secuencial compuesto por agentes de Redacción Editorial, Validación Ética, Análisis Dialéctico y Adaptación Multimodal.
 *   **Active RAG (BCL Integration):** Recuperación dinámica de información desde documentos normativos y manuales de estilo.
 *   **Transparencia en Tiempo Real:** Streaming de eventos internos de los agentes hacia el frontend mediante Socket.IO.
-*   **Persistencia de Sesiones:** Almacenamiento local de interacciones y estados de sesión mediante SQLite.
+*   **Persistencia de Sesiones:** Almacenamiento de interacciones y estados de sesión mediante SQLite local o PostgreSQL gestionado.
 *   **Arquitectura Escalable:** Basado en FastAPI y Pydantic para garantizar un alto rendimiento y validación robusta de datos.
 
 ## Stack Tecnológico
@@ -18,7 +18,7 @@ El sistema implementa una arquitectura de "Caja Blanca" (White Box) que permite 
 *   **API Framework:** FastAPI
 *   **Comunicación en Tiempo Real:** Socket.IO (ASGI)
 *   **Base de Datos Vectorial:** ChromaDB
-*   **Base de Datos Relacional:** SQLite (SQLAlchemy)
+*   **Base de Datos Relacional:** SQLite para desarrollo y PostgreSQL para beta/producción.
 *   **Proveedores de LLM compatibles:** OpenAI, Anthropic, Gemini, Groq, OpenRouter, Together, Ollama local y proveedores compatibles con OpenAI.
 
 ## Estructura del Proyecto
@@ -67,6 +67,13 @@ LLM_MAX_TOKENS=900
 
 DATABASE_URL="sqlite:///./nova.db"
 CHROMA_PERSIST_PATH="./chroma_db"
+```
+
+Para una beta desplegada use PostgreSQL gestionado:
+
+```env
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require"
+CORS_ALLOWED_ORIGINS="https://tu-frontend.example"
 ```
 
 ### Proveedores públicos para pruebas reales
@@ -123,6 +130,19 @@ Para iniciar el servidor con recarga automática:
 python main.py
 ```
 El servidor estará disponible en `http://localhost:8000`. Puede acceder a la documentación interactiva de la API en `http://localhost:8000/docs`.
+
+### Endpoints útiles para frontend
+* `GET /health`: estado básico del backend y modelo activo.
+* `POST /session`: crea o continúa una sesión multiagente.
+* `GET /sessions?user_id=<id>&limit=50`: lista historial real persistido.
+* `GET /session/{session_id}`: recupera una sesión completa.
+
+### Despliegue beta recomendado
+1. Crear una base PostgreSQL en Supabase o Neon.
+2. Configurar `DATABASE_URL`, `OPENAI_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL` y `CORS_ALLOWED_ORIGINS` en el proveedor de hosting.
+3. Desplegar el backend en Render, Railway, Fly.io o Cloud Run con `uvicorn main:socket_app --host 0.0.0.0 --port $PORT`.
+4. Desplegar el frontend Streamlit con `NOVA_API_BASE_URL` apuntando al backend.
+5. Mantener `CHROMA_PERSIST_PATH` en almacenamiento persistente si se usa Chroma local; para producción robusta evaluar `pgvector`, Qdrant Cloud o Pinecone.
 
 ### Ingesta de Datos (RAG)
 Para actualizar la base de conocimientos vectorial:

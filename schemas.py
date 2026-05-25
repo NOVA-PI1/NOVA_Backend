@@ -89,6 +89,15 @@ class SessionResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SessionSummary(BaseModel):
+    session_id: str
+    title: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    user_id: str | None = None
+
+
 class CanvasEditRequest(BaseModel):
     session_id: str | None = None
     texto: str | None = None
