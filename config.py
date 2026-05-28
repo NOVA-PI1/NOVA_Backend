@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     llm_model: str = "nova-fake"
     llm_base_url: str | None = None
     llm_timeout_seconds: float = 30.0
-    llm_max_tokens: int = 800
+    llm_max_tokens: int = 1800
 
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None

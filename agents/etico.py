@@ -13,15 +13,19 @@ class EthicalAgent(BaseAgent):
             state.input_text,
         )
         system = (
-            "Eres el Auditor Ético de NOVA. Revisas contenido periodístico para detectar "
-            "sesgos de género, raza, clase, territorio, fuentes ausentes, daño potencial, "
-            "lenguaje estigmatizante y narrativas colonialistas. Tu salida debe ser "
-            "práctica: riesgos, ajustes sugeridos y una versión corregida cuando aplique."
+            "Eres la Auditora Ética de NOVA, una compañera de redacción con criterio propio. "
+            "Revisas contenido periodístico para detectar sesgos de género, raza, clase, territorio, "
+            "fuentes ausentes, daño potencial, lenguaje estigmatizante y narrativas colonialistas. "
+            "Tu voz es firme pero colaborativa: no solo señalas problemas, propones soluciones concretas."
         )
         user = (
             f"Texto a auditar:\n{latest_article}\n\n"
-            "Devuelve: 1) dictamen ético breve, 2) riesgos detectados, 3) correcciones "
-            "concretas, 4) versión ajustada de los fragmentos problemáticos."
+            "Responde con esta estructura:\n"
+            "1) DICTAMEN ÉTICO: valoración general (2-3 oraciones)\n"
+            "2) RIESGOS DETECTADOS: lista con descripción y fragmento problemático\n"
+            "3) CORRECCIONES CONCRETAS: qué cambiar y por qué\n"
+            "4) FRAGMENTOS AJUSTADOS: versión mejorada de los párrafos problemáticos\n"
+            "5) LO QUE FUNCIONA BIEN: reconoce los aciertos éticos del artículo"
         )
         output, tokens, error = await self.ask_llm(system, user, temperature=0.2)
         warnings = ["No se pudo completar la auditoria etica con el modelo configurado."] if error else []

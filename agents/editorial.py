@@ -16,18 +16,23 @@ class EditorialAgent(BaseAgent):
             for hit in state.knowledge_hits[:5]
         ) or "No hay resultados BCL relevantes para este tema."
         system = (
-            "Eres el Editor Jefe Periodístico de NOVA. Redactas artículos claros, "
-            "verificables y útiles para una audiencia latinoamericana. Evita inventar "
-            "datos: si una afirmación no está sustentada, márcala como pendiente de "
-            "verificación. Entrega un artículo con título, entradilla, cuerpo y cierre."
+            "Eres el Editor Jefe Periodístico de NOVA. una compañera ed redacción con criterio "
+            "propio y experiencia en periodismo latinoamericano. Redactas articulos completos, "
+            "verificables y produnfos. Evita datos: si una afirmación no está sustentada, "
+            "marcala como pendiente de verificación."
+            "Tu articulo DEBE tener: título, kicker/subtitulo, entradilla impactante, cuerpo con al menos "
+            "4 párrafos desarrollados, sección de contexto/antecedentes, y cierre con llamado a la acción "
+            "claro (qué puede hacer el lector, qué preguntas hacerse, que organizaciones seguir)."
+            "Escribe minimo 600 palabras. No uses frases vacias ni lenguaje genérico"
         )
         user = (
-            f"Tema o encargo del usuario:\n{state.input_text}\n\n"
+            f"Tema o encargo del periodista:\n{state.input_text}\n\n"
             f"Contexto recuperado de la BCL:\n{sources}\n\n"
-            "Escribe un primer artículo periodístico en español. No incluyas notas sobre "
-            "tu proceso; entrega solamente el contenido editorial."
+            "Escribe el artículo completo en español: título, entradilla, cuerpo (minimo 4 parrafos) ,"
+            "contexto histórico o regional, y cierre con llamado a la acción concreto."
+            "Entrega solo el contenido editorial listo para editar."
         )
-        output, tokens, error = await self.ask_llm(system, user, temperature=0.35)
+        output, tokens, error = await self.ask_llm(system, user, temperature=0.4)
         fallback = (
             "Titulo: Borrador pendiente de modelo\n\n"
             f"Entradilla: {state.input_text}\n\n"

@@ -77,16 +77,31 @@ class NovaOrchestrator:
 
     async def handle_canvas_edit(self, request: CanvasEditRequest) -> BusEvent:
         session_id = request.session_id or "canvas"
+
+        #Guardar el borrador modificado en el historial
+        if request.texto and request.session_id:
+            draft_request = AgentResult(
+                agent="editorial",
+                output=request.texto,
+                metadata={
+                    "role": "editorial",
+                    "draft_revision": True,
+                    "revision_source": "canvas_edit",
+                    "canvas": request.canvas,
+                },
+            )
+            self.store.save_agent_result(session_id, draft_request)
+            self.store.save_message(session_id, "canvas_revision", request.texto)
+
         payload = {
             "texto": request.texto,
             "canvas": request.canvas,
             "metadata": request.metadata,
+            "draft_saved": bool(request.texto and request.session_id),
         }
         event = BusEvent(session_id=session_id, type="canvas.edited", payload=payload)
         await self.bus.publish(event)
         self.store.save_event(event)
-        if request.texto:
-            self.store.save_message(session_id, "canvas", request.texto)
         return event
 
     async def _publish(self, session_id: str, event_type: str, payload: dict) -> None:

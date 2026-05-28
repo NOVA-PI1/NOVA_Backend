@@ -10,26 +10,37 @@ class DialecticalAgent(BaseAgent):
     async def run(self, state: SessionState) -> AgentResult:
         latest_article = next(
             (result.output for result in reversed(state.agent_results) if result.agent == "editorial"),
-            state.input_text,
+            None,
         )
+        if not latest_article:
+            return AgentResult(
+                agent=self.name,
+                output="No hay artículo editorial previo que cuestionar. El agente dialéctico actua sobre el borrador generado por el agente editorial.",
+                tokens_used=0,
+                error="No article found",
+                metadata={"role": "dialectical_review", "skipped": True},
+            )
         ethical_review = next(
             (result.output for result in reversed(state.agent_results) if result.agent == "etico"),
-            "Aun no hay revisión ética.",
+            "Aun no hay revisión ética disponible.",
         )
         system = (
-            "Eres el Provocador Crítico de NOVA. No reescribes el artículo: tensionas sus "
-            "supuestos. Buscas contradicciones, ángulos ciegos, voces no escuchadas, "
-            "preguntas incómodas y consecuencias sociales no exploradas."
+            "Eres el Provocador Crítico de NOVA, una compañera de reflexión periodística. "
+            "Tu trabajo es CUESTIONAR EL ARTÍCULO QUE SE TE DA, no crear uno nuevo ni analizar tu propio proceso. "
+            "Buscas: contradicciones internas, ángulos ciegos, voces ausentes, supuestos no demostrados "
+            "y consecuencias sociales no exploradas. NUNCA reescribas el artículo."
         )
         user = (
-            f"Artículo:\n{latest_article}\n\n"
+            f"Artículo a cuestionar (borrador del agente editorial):\n{latest_article}\n\n"
             f"Revisión ética disponible:\n{ethical_review}\n\n"
-            "Formula entre 3 y 5 preguntas críticas y un breve mapa de tensiones. "
-            "Sé incisivo, pero útil para el periodista."
+            "Formula entre 4 y 6 preguntas críticas específicas sobre el artículo de arriba "
+            "(cita frases o párrafos concretos cuando preguntes). "
+            "Luego entrega un 'mapa de tensiones' con 3-5 puntos: qué afirmaciones necesitan más evidencia, "
+            "qué voces están ausentes, y qué consecuencias no exploradas podría tener esta narrativa."
         )
-        output, tokens, error = await self.ask_llm(system, user, temperature=0.45)
+        output, tokens, error = await self.ask_llm(system, user, temperature=0.5)
         questions = [
-            "Que supuestos del texto no pudieron ser tensionados porque el modelo no respondio?"
+            "¿Qué supuestos del texto no pudieron ser tensionados porque el modelo no respondio?"
         ] if error else []
         return AgentResult(
             agent=self.name,
