@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     app_name: str = "Nova Backend"
     environment: str = "development"
     cors_allowed_origins: str = "*"
+    frontend_base_url: str = "http://localhost:8501"
 
     llm_provider: LLMProviderName = "fake"
     llm_model: str = "nova-fake"
@@ -42,6 +43,15 @@ class Settings(BaseSettings):
     chroma_persist_path: str = "./chroma_db"
     bcl_collection_name: str = "nova_bcl"
     bcl_relevance_threshold: float = Field(default=0.8, ge=0.0)
+
+    secret_key: str = "dev-secret-change-me"
+    jwt_algorithm: Literal["HS256"] = "HS256"
+    jwt_expiration_minutes: int = 60 * 24 * 7
+    auth_required: bool = False
+
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str | None = None
 
 
 @lru_cache(maxsize=1)
