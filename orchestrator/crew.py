@@ -160,6 +160,7 @@ class NovaCrewOrchestrator:
         by_agent: dict[str, AgentResult] = {result.agent: result for result in state.agent_results}
         return SessionResponse(
             session_id=state.session_id,
+            input_text=state.input_text,
             status=state.status,
             editorial=by_agent.get("editorial"),
             etico=by_agent.get("etico"),

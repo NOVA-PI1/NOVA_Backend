@@ -79,6 +79,7 @@ class SessionState(BaseModel):
 
 class SessionResponse(BaseModel):
     session_id: str
+    input_text: str = ""
     status: str
     editorial: AgentResult | None = None
     etico: AgentResult | None = None
