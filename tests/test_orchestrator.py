@@ -109,12 +109,19 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
                 access_token="token",
             )
 
+            drafts = revised.drafts
+            versions = [d.version for d in drafts]
+            contents = [d.content for d in drafts]
+
             self.assertGreaterEqual(len(revised.drafts), 3)
             self.assertEqual(questioned.dialectico.metadata["target_text"], "Texto manual del canvas")
             self.assertIn("twitter_thread", formatted.social_outputs)
             self.assertEqual(revised.web_hits[0].source, "fake")
             self.assertEqual(document["document_id"], "doc-1")
             self.assertIsNone(deleted)
+            self.assertEqual(versions, sorted(versions))
+            self.assertEqual(len(versions), len(set(versions)))
+            self.assertIn("Texto manual del canvas", contents)
 
 
 if __name__ == "__main__":

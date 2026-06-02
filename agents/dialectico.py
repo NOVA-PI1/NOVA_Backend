@@ -10,11 +10,9 @@ class DialecticalAgent(BaseAgent):
     async def run(self, state: SessionState) -> AgentResult:
         target_text = str(state.metadata.get("target_text") or "").strip()
         if not target_text:
+            target_text = str(state.metadata.get("active_draft_text") or "").strip()
+        if not target_text:
             target_text = state.input_text
-        ethical_review = next(
-            (result.output for result in reversed(state.agent_results) if result.agent == "etico"),
-            "Aun no hay revisión ética disponible.",
-        )
         web_sources = "\n\n".join(
             "\n".join(
                 part

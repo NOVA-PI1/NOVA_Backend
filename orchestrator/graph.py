@@ -46,6 +46,7 @@ class NovaOrchestrator:
         existing_state = self.store.get_session(request.session_id) if request.session_id else None
         target_draft = self._resolve_target_draft(request.session_id, request.target_draft_id) if request.session_id else None
         target_text = target_draft.content if target_draft else self._active_text(existing_state) if existing_state else request.texto
+        active_draft_text = self._active_text(existing_state) if existing_state else ""
 
         state_data = {
             "input_text": request.texto,
@@ -61,6 +62,7 @@ class NovaOrchestrator:
                 "output_format": request.output_format,
                 "target_draft_id": request.target_draft_id,
                 "target_text": target_text,
+                "active_draft_text": active_draft_text,
                 "use_web_context": request.use_web_context,
             },
             "status": "running",
@@ -283,8 +285,10 @@ class NovaOrchestrator:
         drafts = self.store.list_draft_revisions(state.session_id)
         if drafts:
             return drafts[-1].content
-        editorial = next((result.output for result in reversed(state.agent_results) if result.agent == "editorial"), None)
-        return editorial or state.input_text
+        metadata_target = str(state.metadata.get("target_text") or "").strip()
+        if metadata_target:
+            return metadata_target
+        return state.input_text
 
     def _current_draft(self, state: SessionState, drafts: list[DraftRevision]) -> DraftRevision | None:
         current_id = state.metadata.get("current_draft_id")

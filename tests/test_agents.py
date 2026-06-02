@@ -71,6 +71,17 @@ class AgentStabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Borrador activo", user_message)
         self.assertNotIn("Narrativa inventada", user_message)
 
+    async def test_dialectical_agent_falls_back_to_input_text_not_editorial(self):
+        llm = CapturingLLM()
+        state = SessionState(input_text="Texto original", metadata={"target_text": ""})
+        state.agent_results.append(AgentResult(agent="editorial", output="Narrativa inventada"))
+
+        result = await DialecticalAgent(llm).run(state)
+        user_message = llm.last_request.messages[-1].content
+
+        self.assertEqual(result.metadata["target_text"], "Texto original")
+        self.assertIn("Texto original", user_message)
+        self.assertNotIn("Narrativa inventada", user_message)
 
 if __name__ == "__main__":
     unittest.main()
