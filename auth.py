@@ -16,6 +16,7 @@ from config import Settings
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+GOOGLE_OAUTH_SCOPES = "openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents"
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -196,6 +197,7 @@ async def exchange_google_code(code: str, request: Request, settings: Settings) 
         "name": profile.get("name") or email,
         "avatar_url": profile.get("picture"),
         "email_verified": bool(profile.get("email_verified")),
+        "google_access_token": access_token,
     }
 
 
@@ -213,7 +215,7 @@ def create_google_authorize_redirect(
         "client_id": settings.google_client_id,
         "redirect_uri": build_redirect_uri(request, settings),
         "response_type": "code",
-        "scope": "openid email profile",
+        "scope": GOOGLE_OAUTH_SCOPES,
         "access_type": "offline",
         "prompt": "select_account",
         "state": create_oauth_state(frontend_redirect_url, settings),

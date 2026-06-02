@@ -1,8 +1,8 @@
 import sqlite3
 from threading import Lock
 
-from db.models import agent_result_from_row, connect_sqlite, event_to_record, state_to_record
-from schemas import AgentResult, BusEvent, KnowledgeHit, SessionState, SessionSummary
+from db.models import agent_result_from_row, connect_sqlite, draft_from_row, event_to_record, state_to_record
+from schemas import AgentResult, BusEvent, DraftRevision, KnowledgeHit, SessionState, SessionSummary, WebSearchResult
 
 
 class SQLiteSessionStore:
@@ -21,6 +21,7 @@ class SQLiteSessionStore:
                     perfil TEXT NOT NULL,
                     metadata TEXT NOT NULL,
                     knowledge_hits TEXT NOT NULL,
+                    web_hits TEXT NOT NULL DEFAULT '[]',
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -55,9 +56,28 @@ class SQLiteSessionStore:
                     payload TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS draft_revisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    instruction TEXT,
+                    agent TEXT,
+                    created_at TEXT NOT NULL,
+                    metadata TEXT NOT NULL,
+                    UNIQUE(session_id, version)
+                );
                 """
             )
+            self._ensure_sqlite_column("sessions", "web_hits", "TEXT NOT NULL DEFAULT '[]'")
             self.connection.commit()
+
+    def _ensure_sqlite_column(self, table: str, column: str, definition: str) -> None:
+        columns = self.connection.execute(f"PRAGMA table_info({table})").fetchall()
+        if column not in {row["name"] for row in columns}:
+            self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def save_session(self, state: SessionState) -> None:
         record = state_to_record(state)
@@ -65,21 +85,67 @@ class SQLiteSessionStore:
             self.connection.execute(
                 """
                 INSERT INTO sessions (
-                    session_id, input_text, perfil, metadata, knowledge_hits, status, created_at, updated_at
+                    session_id, input_text, perfil, metadata, knowledge_hits, web_hits, status, created_at, updated_at
                 ) VALUES (
-                    :session_id, :input_text, :perfil, :metadata, :knowledge_hits, :status, :created_at, :updated_at
+                    :session_id, :input_text, :perfil, :metadata, :knowledge_hits, :web_hits, :status, :created_at, :updated_at
                 )
                 ON CONFLICT(session_id) DO UPDATE SET
                     input_text=excluded.input_text,
                     perfil=excluded.perfil,
                     metadata=excluded.metadata,
                     knowledge_hits=excluded.knowledge_hits,
+                    web_hits=excluded.web_hits,
                     status=excluded.status,
                     updated_at=excluded.updated_at
                 """,
                 record,
             )
             self.connection.commit()
+
+    def save_draft_revision(self, draft: DraftRevision) -> DraftRevision:
+        with self._lock:
+            if draft.version <= 0:
+                row = self.connection.execute(
+                    "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM draft_revisions WHERE session_id = ?",
+                    (draft.session_id,),
+                ).fetchone()
+                draft.version = int(row["next_version"])
+            cursor = self.connection.execute(
+                """
+                INSERT INTO draft_revisions (
+                    session_id, version, content, source, instruction, agent, created_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    draft.session_id,
+                    draft.version,
+                    draft.content,
+                    draft.source,
+                    draft.instruction,
+                    draft.agent,
+                    draft.created_at.isoformat() if hasattr(draft.created_at, "isoformat") else draft.created_at,
+                    json_dump(draft.metadata),
+                ),
+            )
+            draft.id = cursor.lastrowid
+            self.connection.commit()
+        return draft
+
+    def list_draft_revisions(self, session_id: str) -> list[DraftRevision]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT * FROM draft_revisions WHERE session_id = ? ORDER BY version ASC",
+                (session_id,),
+            ).fetchall()
+        return [draft_from_row(row) for row in rows]
+
+    def get_draft_revision(self, session_id: str, draft_id: int) -> DraftRevision | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT * FROM draft_revisions WHERE session_id = ? AND id = ?",
+                (session_id, draft_id),
+            ).fetchone()
+        return draft_from_row(row) if row else None
 
     def save_message(self, session_id: str, role: str, content: str) -> None:
         with self._lock:
@@ -143,6 +209,7 @@ class SQLiteSessionStore:
             perfil=json_load(session["perfil"], {}),
             metadata=json_load(session["metadata"], {}),
             knowledge_hits=[KnowledgeHit(**hit) for hit in json_load(session["knowledge_hits"], [])],
+            web_hits=[WebSearchResult(**hit) for hit in json_load(session["web_hits"], [])],
             agent_results=[agent_result_from_row(row) for row in results],
             status=session["status"],
             created_at=session["created_at"],
@@ -209,6 +276,7 @@ class PostgresSessionStore:
                         perfil JSONB NOT NULL,
                         metadata JSONB NOT NULL,
                         knowledge_hits JSONB NOT NULL,
+                        web_hits JSONB NOT NULL DEFAULT '[]'::jsonb,
                         status TEXT NOT NULL,
                         created_at TIMESTAMPTZ NOT NULL,
                         updated_at TIMESTAMPTZ NOT NULL
@@ -243,6 +311,22 @@ class PostgresSessionStore:
                         payload JSONB NOT NULL,
                         created_at TIMESTAMPTZ NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS nova_draft_revisions (
+                        id BIGSERIAL PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        version INTEGER NOT NULL,
+                        content TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        instruction TEXT,
+                        agent TEXT,
+                        created_at TIMESTAMPTZ NOT NULL,
+                        metadata JSONB NOT NULL,
+                        UNIQUE(session_id, version)
+                    );
+
+                    ALTER TABLE nova_sessions
+                    ADD COLUMN IF NOT EXISTS web_hits JSONB NOT NULL DEFAULT '[]'::jsonb;
                     """
                 )
             self.connection.commit()
@@ -256,9 +340,9 @@ class PostgresSessionStore:
                 cursor.execute(
                     """
                     INSERT INTO nova_sessions (
-                        session_id, input_text, perfil, metadata, knowledge_hits, status, created_at, updated_at
+                        session_id, input_text, perfil, metadata, knowledge_hits, web_hits, status, created_at, updated_at
                     ) VALUES (
-                        %(session_id)s, %(input_text)s, %(perfil)s, %(metadata)s, %(knowledge_hits)s,
+                        %(session_id)s, %(input_text)s, %(perfil)s, %(metadata)s, %(knowledge_hits)s, %(web_hits)s,
                         %(status)s, %(created_at)s, %(updated_at)s
                     )
                     ON CONFLICT(session_id) DO UPDATE SET
@@ -266,6 +350,7 @@ class PostgresSessionStore:
                         perfil=EXCLUDED.perfil,
                         metadata=EXCLUDED.metadata,
                         knowledge_hits=EXCLUDED.knowledge_hits,
+                        web_hits=EXCLUDED.web_hits,
                         status=EXCLUDED.status,
                         updated_at=EXCLUDED.updated_at
                     """,
@@ -307,6 +392,59 @@ class PostgresSessionStore:
                 )
             self.connection.commit()
 
+    def save_draft_revision(self, draft: DraftRevision) -> DraftRevision:
+        import psycopg2.extras
+
+        with self._lock:
+            with self.connection.cursor(cursor_factory=self.cursor_factory) as cursor:
+                if draft.version <= 0:
+                    cursor.execute(
+                        "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM nova_draft_revisions WHERE session_id = %s",
+                        (draft.session_id,),
+                    )
+                    draft.version = int(cursor.fetchone()["next_version"])
+                cursor.execute(
+                    """
+                    INSERT INTO nova_draft_revisions (
+                        session_id, version, content, source, instruction, agent, created_at, metadata
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (
+                        draft.session_id,
+                        draft.version,
+                        draft.content,
+                        draft.source,
+                        draft.instruction,
+                        draft.agent,
+                        draft.created_at,
+                        psycopg2.extras.Json(draft.metadata),
+                    ),
+                )
+                draft.id = cursor.fetchone()["id"]
+            self.connection.commit()
+        return draft
+
+    def list_draft_revisions(self, session_id: str) -> list[DraftRevision]:
+        with self._lock:
+            with self.connection.cursor(cursor_factory=self.cursor_factory) as cursor:
+                cursor.execute(
+                    "SELECT * FROM nova_draft_revisions WHERE session_id = %s ORDER BY version ASC",
+                    (session_id,),
+                )
+                rows = cursor.fetchall()
+        return [draft_from_mapping(row) for row in rows]
+
+    def get_draft_revision(self, session_id: str, draft_id: int) -> DraftRevision | None:
+        with self._lock:
+            with self.connection.cursor(cursor_factory=self.cursor_factory) as cursor:
+                cursor.execute(
+                    "SELECT * FROM nova_draft_revisions WHERE session_id = %s AND id = %s",
+                    (session_id, draft_id),
+                )
+                row = cursor.fetchone()
+        return draft_from_mapping(row) if row else None
+
     def save_event(self, event: BusEvent) -> None:
         import psycopg2.extras
 
@@ -346,6 +484,7 @@ class PostgresSessionStore:
             perfil=session["perfil"] or {},
             metadata=session["metadata"] or {},
             knowledge_hits=[KnowledgeHit(**hit) for hit in (session["knowledge_hits"] or [])],
+            web_hits=[WebSearchResult(**hit) for hit in (session["web_hits"] or [])],
             agent_results=[agent_result_from_mapping(row) for row in results],
             status=session["status"],
             created_at=session["created_at"],
@@ -412,9 +551,10 @@ def json_load(value: str, default: object) -> object:
 
 def json_record(record: dict, json_wrapper) -> dict:
     wrapped = dict(record)
-    for key in ("perfil", "metadata", "knowledge_hits", "payload"):
+    for key in ("perfil", "metadata", "knowledge_hits", "web_hits", "payload"):
         if key in wrapped and isinstance(wrapped[key], str):
-            wrapped[key] = json_wrapper(json_load(wrapped[key], {} if key != "knowledge_hits" else []))
+            default = [] if key in {"knowledge_hits", "web_hits"} else {}
+            wrapped[key] = json_wrapper(json_load(wrapped[key], default))
     return wrapped
 
 
@@ -428,6 +568,20 @@ def agent_result_from_mapping(row: dict) -> AgentResult:
         tokens_used=row["tokens_used"] or 0,
         metadata=row["metadata"] or {},
         error=row["error"],
+    )
+
+
+def draft_from_mapping(row: dict) -> DraftRevision:
+    return DraftRevision(
+        id=row["id"],
+        session_id=row["session_id"],
+        version=row["version"],
+        content=row["content"],
+        source=row["source"],
+        instruction=row["instruction"],
+        agent=row["agent"],
+        created_at=row["created_at"],
+        metadata=row["metadata"] or {},
     )
 
 

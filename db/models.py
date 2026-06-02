@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from schemas import AgentResult, BusEvent, SessionState
+from schemas import AgentResult, BusEvent, DraftRevision, SessionState, WebSearchResult
 
 
 def sqlite_path_from_url(database_url: str) -> str:
@@ -47,10 +47,25 @@ def state_to_record(state: SessionState) -> dict[str, Any]:
         "perfil": dumps(state.perfil),
         "metadata": dumps(state.metadata),
         "knowledge_hits": dumps([hit.model_dump(mode="json") for hit in state.knowledge_hits]),
+        "web_hits": dumps([hit.model_dump(mode="json") for hit in state.web_hits]),
         "status": state.status,
         "created_at": state.created_at.isoformat(),
         "updated_at": state.updated_at.isoformat(),
     }
+
+
+def draft_from_row(row: sqlite3.Row) -> DraftRevision:
+    return DraftRevision(
+        id=row["id"],
+        session_id=row["session_id"],
+        version=row["version"],
+        content=row["content"],
+        source=row["source"],
+        instruction=row["instruction"],
+        agent=row["agent"],
+        created_at=row["created_at"],
+        metadata=json.loads(row["metadata"] or "{}"),
+    )
 
 
 def event_to_record(event: BusEvent) -> dict[str, Any]:

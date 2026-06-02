@@ -18,8 +18,20 @@ from bcl.loader import KnowledgeBaseService
 from config import get_settings
 from llm import create_llm_provider
 from orchestrator.graph import create_orchestrator
-from schemas import CanvasEditRequest, SessionRequest, SessionResponse, BusEvent, SessionSummary
+from schemas import (
+    CanvasEditRequest,
+    DraftCreateRequest,
+    DraftRevision,
+    DriveDocumentRequest,
+    QuestionsRequest,
+    SessionRequest,
+    SessionResponse,
+    BusEvent,
+    SessionSummary,
+)
 from services import InMemoryMessageBus, create_session_store
+from services.drive import GoogleDriveService
+from services.web_search import WebSearchService
 
 
 settings = get_settings()
@@ -27,7 +39,9 @@ store = create_session_store(settings.database_url)
 bus = InMemoryMessageBus()
 knowledge_base = KnowledgeBaseService(settings)
 llm_provider = create_llm_provider(settings)
-orchestrator = create_orchestrator(store, bus, knowledge_base, llm_provider)
+web_search = WebSearchService(settings)
+drive = GoogleDriveService()
+orchestrator = create_orchestrator(store, bus, knowledge_base, llm_provider, web_search, drive)
 
 app = FastAPI(title=settings.app_name)
 
@@ -164,6 +178,58 @@ async def obtener_sesion(session_id: str, request: Request) -> SessionResponse:
     if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
         raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
     return result
+
+
+@app.get("/session/{session_id}/drafts", response_model=list[DraftRevision])
+async def listar_borradores(session_id: str, request: Request) -> list[DraftRevision]:
+    user = require_user_when_enabled(request)
+    result = orchestrator.get_session(session_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
+        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    return orchestrator.list_drafts(session_id)
+
+
+@app.post("/session/{session_id}/drafts", response_model=DraftRevision)
+async def crear_borrador(session_id: str, data: DraftCreateRequest, request: Request) -> DraftRevision:
+    user = require_user_when_enabled(request)
+    result = orchestrator.get_session(session_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
+        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    try:
+        return orchestrator.create_draft(session_id, data)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session not found") from None
+
+
+@app.post("/session/{session_id}/questions", response_model=list[str])
+async def sugerir_preguntas(session_id: str, data: QuestionsRequest, request: Request) -> list[str]:
+    user = require_user_when_enabled(request)
+    result = orchestrator.get_session(session_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
+        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    try:
+        return await orchestrator.suggest_questions(session_id, data)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session not found") from None
+
+
+@app.post("/session/{session_id}/drive")
+async def sincronizar_drive(session_id: str, data: DriveDocumentRequest, request: Request) -> dict:
+    user = require_user_when_enabled(request)
+    result = orchestrator.get_session(session_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
+        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    access_token = user.get("google_access_token") if user else None
+    document = await orchestrator.apply_drive_action(session_id, data, access_token=access_token)
+    return {"drive_document": document}
 
 
 @sio.on("editar_canvas")

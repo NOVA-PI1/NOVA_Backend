@@ -11,27 +11,57 @@ class EditorialAgent(BaseAgent):
     name = "editorial"
 
     async def run(self, state: SessionState) -> AgentResult:
+        operation = state.metadata.get("operation", "generate")
+        target_text = str(state.metadata.get("target_text") or "").strip()
         sources = "\n\n".join(
             f"- Fuente: {hit.source} | score={hit.score}\n{hit.text}"
             for hit in state.knowledge_hits[:5]
         ) or "No hay resultados BCL relevantes para este tema."
+        web_sources = "\n\n".join(
+            "\n".join(
+                part
+                for part in [
+                    f"- {hit.title}",
+                    f"  URL: {hit.url}",
+                    f"  Fecha: {hit.published_at}" if hit.published_at else "",
+                    f"  Snippet: {hit.snippet}" if hit.snippet else "",
+                ]
+                if part
+            )
+            for hit in state.web_hits[:5]
+        ) or "No se solicitó contexto web o no hubo resultados disponibles."
+
+        if operation in {"question", "format"}:
+            return AgentResult(
+                agent=self.name,
+                output=target_text or state.input_text,
+                metadata={"role": "editorial", "mode": "passthrough", "operation": operation},
+            )
+
         system = (
-            "Eres el Editor Jefe Periodístico de NOVA. una compañera ed redacción con criterio "
-            "propio y experiencia en periodismo latinoamericano. Redactas articulos completos, "
-            "verificables y produnfos. Evita datos: si una afirmación no está sustentada, "
-            "marcala como pendiente de verificación."
-            "Tu articulo DEBE tener: título, kicker/subtitulo, entradilla impactante, cuerpo con al menos "
-            "4 párrafos desarrollados, sección de contexto/antecedentes, y cierre con llamado a la acción "
-            "claro (qué puede hacer el lector, qué preguntas hacerse, que organizaciones seguir)."
-            "Escribe minimo 600 palabras. No uses frases vacias ni lenguaje genérico"
+            "Eres la editora periodística de NOVA: una compañera editorial con criterio propio, "
+            "cercana y exigente. Escribes y revisas piezas en español con enfoque latinoamericano, "
+            "sin inventar datos. Si una afirmación no está sustentada, márcala como pendiente de verificación. "
+            "No expliques tu funcionamiento; entrega texto editorial útil y listo para trabajar."
         )
-        user = (
-            f"Tema o encargo del periodista:\n{state.input_text}\n\n"
-            f"Contexto recuperado de la BCL:\n{sources}\n\n"
-            "Escribe el artículo completo en español: título, entradilla, cuerpo (minimo 4 parrafos) ,"
-            "contexto histórico o regional, y cierre con llamado a la acción concreto."
-            "Entrega solo el contenido editorial listo para editar."
-        )
+        if operation == "revise" and target_text:
+            user = (
+                f"Borrador activo a modificar:\n{target_text}\n\n"
+                f"Instrucción editorial del periodista:\n{state.input_text}\n\n"
+                f"Contexto BCL separado de la web:\n{sources}\n\n"
+                f"Contexto web/citas, si aplica:\n{web_sources}\n\n"
+                "Reescribe el borrador respetando la intención original, aplicando la instrucción "
+                "y conservando lo que funcione. Entrega solo la nueva versión completa."
+            )
+        else:
+            user = (
+                f"Tema o encargo del periodista:\n{state.input_text}\n\n"
+                f"Contexto recuperado de la BCL:\n{sources}\n\n"
+                f"Contexto web/citas, si aplica:\n{web_sources}\n\n"
+                "Escribe un artículo completo en español con título, subtítulo, entradilla, "
+                "cuerpo desarrollado, contexto/antecedentes y cierre con una pregunta o acción concreta. "
+                "Entrega solo el contenido editorial listo para editar."
+            )
         output, tokens, error = await self.ask_llm(system, user, temperature=0.4)
         fallback = (
             "Titulo: Borrador pendiente de modelo\n\n"
@@ -45,7 +75,7 @@ class EditorialAgent(BaseAgent):
             output=output or fallback,
             tokens_used=tokens,
             error=error,
-            metadata={"role": "editorial"},
+            metadata={"role": "editorial", "operation": operation},
         )
 
 def create_editorial_agent(llm_instance, bcl_tool: "BCLTool") -> Any:

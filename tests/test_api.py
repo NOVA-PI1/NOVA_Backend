@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import main
-from schemas import AgentResult, BusEvent, SessionResponse, SessionSummary, utc_now
+from schemas import AgentResult, BusEvent, DraftRevision, SessionResponse, SessionSummary, utc_now
 
 
 class FakeOrchestrator:
@@ -35,6 +35,25 @@ class FakeOrchestrator:
                 user_id=user_id,
             )
         ]
+
+    def list_drafts(self, session_id):
+        return [DraftRevision(session_id=session_id, version=1, content="Texto final")]
+
+    def create_draft(self, session_id, request):
+        return DraftRevision(session_id=session_id, version=2, content=request.content, source=request.source)
+
+    async def suggest_questions(self, session_id, request):
+        return ["¿Qué evidencia falta?"]
+
+    async def apply_drive_action(self, session_id, request, *, access_token=None):
+        if request.action == "delete":
+            return None
+        return {
+            "document_id": "doc-1",
+            "url": "https://docs.google.com/document/d/doc-1/edit",
+            "last_synced_at": utc_now().isoformat(),
+            "shared": True,
+        }
 
     async def handle_canvas_edit(self, request):
         return BusEvent(session_id=request.session_id or "canvas", type="canvas.edited")
@@ -75,21 +94,33 @@ class ApiHandlerTests(unittest.IsolatedAsyncioTestCase):
         main.orchestrator = self.original_orchestrator
 
     async def test_post_session_handler(self):
-        response = await main.nueva_sesion(main.SessionRequest(texto="Hola Nova"))
+        response = await main.nueva_sesion(main.SessionRequest(texto="Hola Nova"), None)
 
         self.assertEqual(response.session_id, "session-1")
 
     async def test_get_session_not_found_handler(self):
         with self.assertRaises(main.HTTPException) as error:
-            await main.obtener_sesion("missing")
+            await main.obtener_sesion("missing", None)
 
         self.assertEqual(error.exception.status_code, 404)
 
     async def test_list_sessions_handler(self):
-        response = await main.listar_sesiones(user_id="user-1", limit=10)
+        response = await main.listar_sesiones(None, user_id="user-1", limit=10)
 
         self.assertEqual(response[0].session_id, "session-1")
         self.assertEqual(response[0].user_id, "user-1")
+
+    async def test_draft_and_question_handlers(self):
+        draft = await main.crear_borrador("session-1", main.DraftCreateRequest(content="Nuevo texto"), None)
+        questions = await main.sugerir_preguntas("session-1", main.QuestionsRequest(text="Nuevo texto"), None)
+
+        self.assertEqual(draft.version, 2)
+        self.assertEqual(questions, ["¿Qué evidencia falta?"])
+
+    async def test_drive_handler(self):
+        response = await main.sincronizar_drive("session-1", main.DriveDocumentRequest(action="create"), None)
+
+        self.assertEqual(response["drive_document"]["document_id"], "doc-1")
 
 
 class SocketTests(unittest.IsolatedAsyncioTestCase):

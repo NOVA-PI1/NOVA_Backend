@@ -4,7 +4,7 @@ from agents.dialectico import DialecticalAgent
 from agents.editorial import EditorialAgent
 from agents.etico import EthicalAgent
 from agents.multimodal import MultimodalAgent
-from schemas import LLMRequest, SessionState
+from schemas import AgentResult, LLMRequest, SessionState
 
 
 class FailingLLM:
@@ -12,6 +12,19 @@ class FailingLLM:
 
     async def generate(self, request: LLMRequest):
         raise RuntimeError("model unavailable")
+
+
+class CapturingLLM:
+    name = "capturing"
+
+    def __init__(self):
+        self.last_request = None
+
+    async def generate(self, request: LLMRequest):
+        from schemas import LLMResponse
+
+        self.last_request = request
+        return LLMResponse(text="¿Qué evidencia falta?\n- Falta una voz directa.", model="test", provider="capturing")
 
 
 class AgentStabilityTests(unittest.IsolatedAsyncioTestCase):
@@ -45,6 +58,18 @@ class AgentStabilityTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.agent, "multimodal")
         self.assertEqual(result.metadata["mode"], "stub")
+
+    async def test_dialectical_agent_uses_target_text_over_editorial_output(self):
+        llm = CapturingLLM()
+        state = SessionState(input_text="Texto original", metadata={"target_text": "Borrador activo"})
+        state.agent_results.append(AgentResult(agent="editorial", output="Narrativa inventada"))
+
+        result = await DialecticalAgent(llm).run(state)
+        user_message = llm.last_request.messages[-1].content
+
+        self.assertEqual(result.metadata["target_text"], "Borrador activo")
+        self.assertIn("Borrador activo", user_message)
+        self.assertNotIn("Narrativa inventada", user_message)
 
 
 if __name__ == "__main__":

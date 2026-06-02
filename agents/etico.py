@@ -8,7 +8,8 @@ class EthicalAgent(BaseAgent):
     name = "etico"
 
     async def run(self, state: SessionState) -> AgentResult:
-        latest_article = next(
+        target_text = str(state.metadata.get("target_text") or "").strip()
+        text_to_review = target_text or next(
             (result.output for result in reversed(state.agent_results) if result.agent == "editorial"),
             state.input_text,
         )
@@ -19,7 +20,7 @@ class EthicalAgent(BaseAgent):
             "Tu voz es firme pero colaborativa: no solo señalas problemas, propones soluciones concretas."
         )
         user = (
-            f"Texto a auditar:\n{latest_article}\n\n"
+            f"Texto a auditar:\n{text_to_review}\n\n"
             "Responde con esta estructura:\n"
             "1) DICTAMEN ÉTICO: valoración general (2-3 oraciones)\n"
             "2) RIESGOS DETECTADOS: lista con descripción y fragmento problemático\n"
@@ -35,7 +36,7 @@ class EthicalAgent(BaseAgent):
             warnings=warnings,
             tokens_used=tokens,
             error=error,
-            metadata={"role": "ethical_review"},
+            metadata={"role": "ethical_review", "target_text": text_to_review},
         )
 
 def create_ethical_agent(llm_instance) -> Any:

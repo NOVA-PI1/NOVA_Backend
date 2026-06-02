@@ -38,6 +38,18 @@ class SessionRequest(BaseModel):
     perfil: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     images: list[str] = Field(default_factory=list)
+    operation: Literal["generate", "revise", "question", "format"] = "generate"
+    target_draft_id: int | None = None
+    output_format: Literal["article", "twitter_thread", "instagram_post", "instagram_carousel", "linkedin_post", "caption"] = "article"
+    use_web_context: bool = False
+
+
+class WebSearchResult(BaseModel):
+    title: str
+    url: str
+    snippet: str = ""
+    published_at: str | None = None
+    source: str = "web"
 
 
 class KnowledgeHit(BaseModel):
@@ -71,6 +83,7 @@ class SessionState(BaseModel):
     perfil: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     knowledge_hits: list[KnowledgeHit] = Field(default_factory=list)
+    web_hits: list[WebSearchResult] = Field(default_factory=list)
     agent_results: list[AgentResult] = Field(default_factory=list)
     status: Literal["created", "running", "completed", "failed"] = "created"
     created_at: datetime = Field(default_factory=utc_now)
@@ -86,8 +99,14 @@ class SessionResponse(BaseModel):
     dialectico: AgentResult | None = None
     multimodal: AgentResult | None = None
     knowledge_hits: list[KnowledgeHit] = Field(default_factory=list)
+    web_hits: list[WebSearchResult] = Field(default_factory=list)
     trace: list[AgentResult] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    drafts: list["DraftRevision"] = Field(default_factory=list)
+    current_draft: "DraftRevision | None" = None
+    suggested_questions: list[str] = Field(default_factory=list)
+    social_outputs: dict[str, str] = Field(default_factory=dict)
+    drive_document: dict[str, Any] | None = None
 
 
 class SessionSummary(BaseModel):
@@ -104,3 +123,36 @@ class CanvasEditRequest(BaseModel):
     texto: str | None = None
     canvas: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DraftRevision(BaseModel):
+    id: int | None = None
+    session_id: str
+    version: int
+    content: str
+    source: str = "system"
+    instruction: str | None = None
+    agent: AgentName | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DraftCreateRequest(BaseModel):
+    content: str = Field(min_length=1)
+    source: str = "canvas"
+    instruction: str | None = None
+    agent: AgentName | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class QuestionsRequest(BaseModel):
+    text: str | None = None
+    draft_id: int | None = None
+    count: int = Field(default=6, ge=1, le=12)
+
+
+class DriveDocumentRequest(BaseModel):
+    action: Literal["create", "update", "delete"]
+    draft_id: int | None = None
+    content: str | None = None
+    title: str | None = None

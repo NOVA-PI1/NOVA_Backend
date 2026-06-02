@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     google_client_secret: str | None = None
     google_redirect_uri: str | None = None
 
+    web_search_enabled: bool = False
+    web_search_provider: Literal["tavily", "brave", "serpapi", "fake"] = "fake"
+    web_search_api_key: str | None = None
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
