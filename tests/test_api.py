@@ -29,6 +29,7 @@ class FakeOrchestrator:
         self.run_session = AsyncMock(
             side_effect=run_session_side_effect
         )
+        self.deleted_sessions = []
 
     def get_session(self, session_id: str):
         if session_id == "missing":
@@ -52,6 +53,10 @@ class FakeOrchestrator:
 
     def create_draft(self, session_id, request):
         return DraftRevision(session_id=session_id, version=2, content=request.content, source=request.source)
+
+    def delete_session(self, session_id):
+        self.deleted_sessions.append(session_id)
+        return True
 
     async def suggest_questions(self, session_id, request):
         return ["¿Qué evidencia falta?"]
@@ -129,6 +134,12 @@ class ApiHandlerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response[0].session_id, "session-1")
         self.assertEqual(response[0].user_id, "user-1")
+
+    async def test_delete_session_handler(self):
+        response = await main.eliminar_sesion("session-1", None)
+
+        self.assertEqual(response, {"deleted": True})
+        self.assertEqual(main.orchestrator.deleted_sessions, ["session-1"])
 
     async def test_draft_and_question_handlers(self):
         draft = await main.crear_borrador("session-1", main.DraftCreateRequest(content="Nuevo texto"), None)

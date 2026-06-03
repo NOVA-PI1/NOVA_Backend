@@ -103,6 +103,9 @@ class NovaOrchestrator:
     def list_sessions(self, user_id: str | None = None, limit: int = 50) -> list[SessionSummary]:
         return self.store.list_sessions(user_id=user_id, limit=limit)
 
+    def delete_session(self, session_id: str) -> bool:
+        return self.store.delete_session(session_id)
+
     def list_drafts(self, session_id: str) -> list[DraftRevision]:
         return self.store.list_draft_revisions(session_id)
 

@@ -216,6 +216,16 @@ class SQLiteSessionStore:
             updated_at=session["updated_at"],
         )
 
+    def delete_session(self, session_id: str) -> bool:
+        with self._lock:
+            cursor = self.connection.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+            self.connection.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            self.connection.execute("DELETE FROM agent_results WHERE session_id = ?", (session_id,))
+            self.connection.execute("DELETE FROM bus_events WHERE session_id = ?", (session_id,))
+            self.connection.execute("DELETE FROM draft_revisions WHERE session_id = ?", (session_id,))
+            self.connection.commit()
+        return cursor.rowcount > 0
+
     def events_for_session(self, session_id: str) -> list[BusEvent]:
         with self._lock:
             rows = self.connection.execute(
@@ -490,6 +500,18 @@ class PostgresSessionStore:
             created_at=session["created_at"],
             updated_at=session["updated_at"],
         )
+
+    def delete_session(self, session_id: str) -> bool:
+        with self._lock:
+            with self.connection.cursor() as cursor:
+                cursor.execute("DELETE FROM nova_messages WHERE session_id = %s", (session_id,))
+                cursor.execute("DELETE FROM nova_agent_results WHERE session_id = %s", (session_id,))
+                cursor.execute("DELETE FROM nova_bus_events WHERE session_id = %s", (session_id,))
+                cursor.execute("DELETE FROM nova_draft_revisions WHERE session_id = %s", (session_id,))
+                cursor.execute("DELETE FROM nova_sessions WHERE session_id = %s", (session_id,))
+                deleted = cursor.rowcount
+            self.connection.commit()
+        return deleted > 0
 
     def events_for_session(self, session_id: str) -> list[BusEvent]:
         with self._lock:

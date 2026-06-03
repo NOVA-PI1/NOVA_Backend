@@ -1,9 +1,13 @@
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 import socketio
+import io
+import uuid
+from pathlib import Path
+from pypdf import PdfReader
 
 from auth import (
     configured_providers,
@@ -201,6 +205,15 @@ async def obtener_sesion(session_id: str, request: Request) -> SessionResponse:
     return result
 
 
+@app.delete("/session/{session_id}")
+async def eliminar_sesion(session_id: str, request: Request) -> dict:
+    ensure_session_access(session_id, request)
+    deleted = orchestrator.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"No encontré la sesión '{session_id}' para eliminarla.")
+    return {"deleted": True}
+
+
 @app.get("/session/{session_id}/drafts", response_model=list[DraftRevision])
 async def listar_borradores(session_id: str, request: Request) -> list[DraftRevision]:
     ensure_session_access(session_id, request)
@@ -234,6 +247,73 @@ async def sincronizar_drive(session_id: str, data: DriveDocumentRequest, request
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error) or "No pude sincronizar Drive para esta sesión.") from None
     return {"drive_document": document}
+
+
+@app.post("/session/{session_id}/attachments")
+async def upload_attachments(session_id: str, request: Request, files: list[UploadFile] = File(...)) -> dict:
+    # Verificar acceso a la sesión
+    ensure_session_access(session_id, request)
+
+    saved: list[dict] = []
+    ingest_dir = Path(__file__).resolve().parent / "data_ingesta"
+    ingest_dir.mkdir(parents=True, exist_ok=True)
+
+    documents: list[str] = []
+    ids: list[str] = []
+    metadatas: list[dict] = []
+
+    for upload in files:
+        try:
+            content_bytes = await upload.read()
+            filename = upload.filename or f"file-{uuid.uuid4().hex}"
+            dest = ingest_dir / filename
+            dest.write_bytes(content_bytes)
+
+            # Extraer texto básico: pdf o texto plano
+            text = ""
+            lower = filename.lower()
+            if lower.endswith('.pdf'):
+                try:
+                    reader = PdfReader(io.BytesIO(content_bytes))
+                    pages = []
+                    for page in reader.pages:
+                        try:
+                            pages.append(page.extract_text() or "")
+                        except Exception:
+                            pages.append("")
+                    text = "\n\n".join(pages).strip()
+                except Exception:
+                    text = ""
+            else:
+                try:
+                    text = content_bytes.decode('utf-8')
+                except Exception:
+                    try:
+                        text = content_bytes.decode('latin-1')
+                    except Exception:
+                        text = ""
+
+            doc_id = f"{session_id}:{uuid.uuid4().hex}"
+            metadata = {"source": filename, "session_id": session_id}
+
+            if text:
+                documents.append(text)
+                ids.append(doc_id)
+                metadatas.append(metadata)
+
+            saved.append({"filename": filename, "path": str(dest), "doc_id": doc_id, "has_text": bool(text)})
+        except Exception as e:
+            saved.append({"filename": upload.filename, "error": str(e)})
+
+    # Indexar documentos en BCL (si se pudo extraer texto)
+    indexed = False
+    if documents:
+        try:
+            indexed = knowledge_base.add_documents(documents, ids, metadatas)
+        except Exception:
+            indexed = False
+
+    return {"saved": saved, "indexed": indexed}
 
 
 @sio.on("editar_canvas")

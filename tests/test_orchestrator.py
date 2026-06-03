@@ -123,6 +123,25 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(versions), len(set(versions)))
             self.assertIn("Texto manual del canvas", contents)
 
+    async def test_delete_session_removes_saved_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings(
+                llm_provider="fake",
+                database_url=f"sqlite:///{temp_dir}/nova.db",
+                chroma_persist_path=f"{temp_dir}/chroma",
+            )
+            store = SQLiteSessionStore(settings.database_url)
+            bus = InMemoryMessageBus()
+            knowledge_base = KnowledgeBaseService(settings)
+            orchestrator = create_orchestrator(store, bus, knowledge_base, FakeLLMProvider())
+
+            response = await orchestrator.run_session(SessionRequest(texto="Genera una nota breve."))
+            deleted = orchestrator.delete_session(response.session_id)
+
+            self.assertTrue(deleted)
+            self.assertIsNone(orchestrator.get_session(response.session_id))
+            self.assertEqual(orchestrator.list_sessions(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
