@@ -141,9 +141,32 @@ def require_user_when_enabled(request: Request) -> dict | None:
     return get_current_user_from_request(request, settings)
 
 
+def ensure_session_access(session_id: str, request: Request) -> tuple[SessionResponse, dict | None]:
+    user = require_user_when_enabled(request)
+    result = orchestrator.get_session(session_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No encontré la sesión '{session_id}'. Carga otra conversación o inicia una nueva.",
+        )
+    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
+        raise HTTPException(
+            status_code=403,
+            detail="Esta sesión pertenece a otro usuario autenticado.",
+        )
+    return result, user
+
+
 @app.post("/session", response_model=SessionResponse)
 async def nueva_sesion(data: SessionRequest, request: Request) -> SessionResponse:
     user = require_user_when_enabled(request)
+    if data.session_id:
+        existing = orchestrator.get_session(data.session_id)
+        if user and existing and existing.metadata.get("user_id") not in {None, user["user_id"]}:
+            raise HTTPException(
+                status_code=403,
+                detail="No puedes continuar una sesión que pertenece a otro usuario.",
+            )
     if user:
         data.perfil.update(
             {
@@ -154,7 +177,10 @@ async def nueva_sesion(data: SessionRequest, request: Request) -> SessionRespons
             }
         )
         data.metadata["user_id"] = user["user_id"]
-    return await orchestrator.run_session(data)
+    try:
+        return await orchestrator.run_session(data)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error) or "No pude ejecutar la sesión con el borrador indicado.") from None
 
 
 @app.get("/sessions", response_model=list[SessionSummary])
@@ -171,64 +197,42 @@ async def listar_sesiones(
 
 @app.get("/session/{session_id}", response_model=SessionResponse)
 async def obtener_sesion(session_id: str, request: Request) -> SessionResponse:
-    user = require_user_when_enabled(request)
-    result = orchestrator.get_session(session_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
-        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    result, _ = ensure_session_access(session_id, request)
     return result
 
 
 @app.get("/session/{session_id}/drafts", response_model=list[DraftRevision])
 async def listar_borradores(session_id: str, request: Request) -> list[DraftRevision]:
-    user = require_user_when_enabled(request)
-    result = orchestrator.get_session(session_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
-        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    ensure_session_access(session_id, request)
     return orchestrator.list_drafts(session_id)
 
 
 @app.post("/session/{session_id}/drafts", response_model=DraftRevision)
 async def crear_borrador(session_id: str, data: DraftCreateRequest, request: Request) -> DraftRevision:
-    user = require_user_when_enabled(request)
-    result = orchestrator.get_session(session_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
-        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    ensure_session_access(session_id, request)
     try:
         return orchestrator.create_draft(session_id, data)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Session not found") from None
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error) or "No pude guardar el borrador en esta sesión.") from None
 
 
 @app.post("/session/{session_id}/questions", response_model=list[str])
 async def sugerir_preguntas(session_id: str, data: QuestionsRequest, request: Request) -> list[str]:
-    user = require_user_when_enabled(request)
-    result = orchestrator.get_session(session_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
-        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    ensure_session_access(session_id, request)
     try:
         return await orchestrator.suggest_questions(session_id, data)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Session not found") from None
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error) or "No pude generar preguntas para esta sesión.") from None
 
 
 @app.post("/session/{session_id}/drive")
 async def sincronizar_drive(session_id: str, data: DriveDocumentRequest, request: Request) -> dict:
-    user = require_user_when_enabled(request)
-    result = orchestrator.get_session(session_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if user and result.metadata.get("user_id") not in {None, user["user_id"]}:
-        raise HTTPException(status_code=403, detail="Session does not belong to the authenticated user")
+    _, user = ensure_session_access(session_id, request)
     access_token = user.get("google_access_token") if user else None
-    document = await orchestrator.apply_drive_action(session_id, data, access_token=access_token)
+    try:
+        document = await orchestrator.apply_drive_action(session_id, data, access_token=access_token)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error) or "No pude sincronizar Drive para esta sesión.") from None
     return {"drive_document": document}
 
 

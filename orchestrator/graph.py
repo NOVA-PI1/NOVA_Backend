@@ -45,6 +45,8 @@ class NovaOrchestrator:
     async def run_session(self, request: SessionRequest) -> SessionResponse:
         existing_state = self.store.get_session(request.session_id) if request.session_id else None
         target_draft = self._resolve_target_draft(request.session_id, request.target_draft_id) if request.session_id else None
+        if request.target_draft_id and target_draft is None:
+            raise ValueError(f"Draft {request.target_draft_id} not found for session {request.session_id}")
         target_text = target_draft.content if target_draft else self._active_text(existing_state) if existing_state else request.texto
         active_draft_text = self._active_text(existing_state) if existing_state else ""
 
@@ -208,6 +210,19 @@ class NovaOrchestrator:
     def _response_from_state(self, state: SessionState) -> SessionResponse:
         by_agent: dict[str, AgentResult] = {result.agent: result for result in state.agent_results}
         drafts = self.store.list_draft_revisions(state.session_id)
+        current_draft = self._current_draft(state, drafts)
+        active_text = current_draft.content if current_draft else by_agent.get("editorial").output if by_agent.get("editorial") else self._active_text(state)
+        completed_agents = sum(1 for result in state.agent_results if result.output.strip() and not result.error)
+        total_agents = len(self._agents_for_operation(str(state.metadata.get("operation", "generate"))))
+        metadata = {
+            **state.metadata,
+            "title": self._title_for_state(state),
+            "completed_agents": completed_agents,
+            "total_agents": total_agents,
+            "active_word_count": len(active_text.split()),
+            "display_status": self._display_status(state, completed_agents, total_agents),
+            "markdown_enabled": True,
+        }
         return SessionResponse(
             session_id=state.session_id,
             input_text=state.input_text,
@@ -219,9 +234,9 @@ class NovaOrchestrator:
             knowledge_hits=state.knowledge_hits,
             web_hits=state.web_hits,
             trace=state.agent_results,
-            metadata=state.metadata,
+            metadata=metadata,
             drafts=drafts,
-            current_draft=self._current_draft(state, drafts),
+            current_draft=current_draft,
             suggested_questions=self._suggested_questions(state, by_agent),
             social_outputs=self._social_outputs(state),
             drive_document=state.metadata.get("drive_document"),
@@ -336,6 +351,15 @@ class NovaOrchestrator:
     def _title_for_state(self, state: SessionState) -> str:
         title = state.metadata.get("title") or state.input_text or state.session_id
         return " ".join(str(title).split())[:90]
+
+    def _display_status(self, state: SessionState, completed_agents: int, total_agents: int) -> str:
+        if state.status == "completed":
+            return "Listo para editar"
+        if state.status == "running":
+            return f"Coordinando agentes {completed_agents}/{total_agents}"
+        if state.status == "failed":
+            return "Revisar errores"
+        return "Preparando sesión"
 
 
 def create_orchestrator(store, bus: InMemoryMessageBus, knowledge_base, llm, web_search=None, drive=None) -> NovaOrchestrator:

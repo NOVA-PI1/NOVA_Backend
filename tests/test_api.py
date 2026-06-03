@@ -10,13 +10,24 @@ from schemas import AgentResult, BusEvent, DraftRevision, SessionResponse, Sessi
 
 class FakeOrchestrator:
     def __init__(self):
-        self.run_session = AsyncMock(
-            return_value=SessionResponse(
+        async def run_session_side_effect(request):
+            if request.target_draft_id == 404:
+                raise ValueError("Draft 404 not found for session session-1")
+            return SessionResponse(
                 session_id="session-1",
                 status="completed",
                 editorial=AgentResult(agent="editorial", output="Texto final"),
                 trace=[AgentResult(agent="editorial", output="Texto final")],
+                metadata={
+                    "display_status": "Listo para editar",
+                    "completed_agents": 1,
+                    "active_word_count": 2,
+                    "markdown_enabled": True,
+                },
             )
+
+        self.run_session = AsyncMock(
+            side_effect=run_session_side_effect
         )
 
     def get_session(self, session_id: str):
@@ -97,12 +108,21 @@ class ApiHandlerTests(unittest.IsolatedAsyncioTestCase):
         response = await main.nueva_sesion(main.SessionRequest(texto="Hola Nova"), None)
 
         self.assertEqual(response.session_id, "session-1")
+        self.assertTrue(response.metadata["markdown_enabled"])
+
+    async def test_post_session_invalid_draft_returns_clear_not_found(self):
+        with self.assertRaises(main.HTTPException) as error:
+            await main.nueva_sesion(main.SessionRequest(texto="Hola Nova", session_id="session-1", target_draft_id=404), None)
+
+        self.assertEqual(error.exception.status_code, 404)
+        self.assertIn("Draft 404", error.exception.detail)
 
     async def test_get_session_not_found_handler(self):
         with self.assertRaises(main.HTTPException) as error:
             await main.obtener_sesion("missing", None)
 
         self.assertEqual(error.exception.status_code, 404)
+        self.assertIn("No encontré la sesión", error.exception.detail)
 
     async def test_list_sessions_handler(self):
         response = await main.listar_sesiones(None, user_id="user-1", limit=10)

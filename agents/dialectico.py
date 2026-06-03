@@ -13,6 +13,8 @@ class DialecticalAgent(BaseAgent):
             target_text = str(state.metadata.get("active_draft_text") or "").strip()
         if not target_text:
             target_text = state.input_text
+        ethical_result = next((result for result in reversed(state.agent_results) if result.agent == "etico"), None)
+        ethical_review = ethical_result.output if ethical_result else "No hay revisión ética previa disponible."
         web_sources = "\n\n".join(
             "\n".join(
                 part
